@@ -41,6 +41,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [nsfwMode, setNsfwMode] = useState(true);
   const [diarization, setDiarization] = useState(true);
+  const [clientApiKey, setClientApiKey] = useState<string>(localStorage.getItem('elevenlabs_apiKey') || '');
+  const [useDirectMode, setUseDirectMode] = useState<boolean>(!!localStorage.getItem('elevenlabs_apiKey'));
   
   const [stats, setStats] = useState<ProcessingStats>({
     cpu: 12,
@@ -75,32 +77,52 @@ export default function App() {
 
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('model_id', 'scribe_v1');
 
     try {
-      const response = await fetch('/api/transcribe', {
-        method: 'POST',
-        body: formData,
-      });
+      let data;
+      if (useDirectMode && clientApiKey) {
+        // DIRECT MODE: Bypasses Vercel/Server limits
+        const response = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
+          method: 'POST',
+          headers: { 'xi-api-key': clientApiKey },
+          body: formData,
+        });
+        
+        if (!response.ok) {
+          const errData = await response.json();
+          throw new Error(errData.detail?.message || 'Direct transcription failed');
+        }
+        
+        const rawTranscription = await response.json();
+        // Server side generated SRT for consistency, or we simulate here
+        // We'll call a small server utility to get the SRT if needed, but for now let's just use the server's srt logic if we can
+        // To be safe, we'll use a local SRT converter in the next step
+        data = { transcription: rawTranscription, srt: null, filename: file.name.replace(/\.[^/.]+$/, "") + ".srt" };
+      } else {
+        // PROXY MODE: Subject to 4.5MB Vercel Limit
+        const response = await fetch('/api/transcribe', {
+          method: 'POST',
+          body: formData,
+        });
 
-      if (response.status === 413) {
-        throw new Error('File too large for the platform. Vercel: 4.5MB, AI Studio: ~32MB. Use a smaller file or chunked uploads.');
+        if (response.status === 413) {
+          throw new Error('File too large for Vercel (4.5MB). Please enter your API Key below to enable "Unlimited Size Mode".');
+        }
+
+        data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Transcription failed');
       }
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Transcription failed');
-      }
-
-      // ElevenLabs STT response structure handling
-      // Based on docs, it returns words and segments
+      // Process segments logic
       let segments: TranscriptionSegment[] = [];
-      if (data.transcription.segments) {
-        segments = data.transcription.segments;
-      } else if (data.transcription.words) {
-        // Group words if segments missing
-        for (let i = 0; i < data.transcription.words.length; i += 8) {
-          const chunk = data.transcription.words.slice(i, i + 8);
+      const transData = data.transcription;
+      
+      if (transData.segments) {
+        segments = transData.segments;
+      } else if (transData.words) {
+        for (let i = 0; i < transData.words.length; i += 8) {
+          const chunk = transData.words.slice(i, i + 8);
           segments.push({
             start: chunk[0].start,
             end: chunk[chunk.length - 1].end,
@@ -110,7 +132,15 @@ export default function App() {
       }
 
       setTranscription(segments);
-      setSrt(data.srt);
+      
+      // If direct mode, generate SRT locally to be fast
+      if (useDirectMode) {
+        const srtUtils = await import('./utils/srt');
+        setSrt(srtUtils.convertToSrt(transData));
+      } else {
+        setSrt(data.srt);
+      }
+      
       setDownloadFilename(data.filename);
       setStats(prev => ({ ...prev, status: 'IDLE', cpu: 12 }));
     } catch (err: any) {
@@ -328,6 +358,32 @@ export default function App() {
                     animate={{ x: nsfwMode ? 22 : 4 }}
                   />
                 </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-zinc-900 border border-violet-500/20 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase text-violet-400">Unlimited Size Mode</span>
+                  <div 
+                    onClick={() => setUseDirectMode(!useDirectMode)}
+                    className={`w-7 h-3.5 rounded-full cursor-pointer transition-colors ${useDirectMode ? 'bg-emerald-500' : 'bg-zinc-700'}`}
+                  >
+                    <motion.div className="w-2.5 h-2.5 bg-white rounded-full m-0.5" animate={{ x: useDirectMode ? 14 : 0 }} />
+                  </div>
+                </div>
+                <div className="relative">
+                  <input 
+                    type="password"
+                    placeholder="ENTER ELEVENLABS API KEY..."
+                    value={clientApiKey}
+                    onChange={(e) => {
+                      setClientApiKey(e.target.value);
+                      localStorage.setItem('elevenlabs_apiKey', e.target.value);
+                    }}
+                    className="w-full bg-black/50 border border-zinc-800 rounded-lg p-2 text-[10px] font-mono text-zinc-300 focus:border-violet-500 outline-none"
+                  />
+                  <Lock className="absolute right-2 top-2.5 w-3 h-3 text-zinc-600" />
+                </div>
+                <p className="text-[8px] text-zinc-600 leading-tight">By entering your key, the browser will upload files directly to ElevenLabs, bypassing the 4.5MB Vercel limit.</p>
               </div>
 
               <div className="flex flex-col gap-2">

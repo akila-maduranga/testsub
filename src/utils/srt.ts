@@ -1,73 +1,37 @@
-/**
- * ElevenLabs Scribe JSON to SRT Converter
- */
+export function convertToSrt(transcription: any): string {
+  if (!transcription || (!transcription.words && !transcription.segments)) return '';
+  
+  let srt = '';
+  let counter = 1;
 
-export interface Word {
-  text: string;
-  start: number;
-  end: number;
-  speaker_id?: string;
-}
-
-export interface TranscriptionResponse {
-  words: Word[];
-}
-
-function formatTime(seconds: number): string {
-  const date = new Date(0);
-  date.setSeconds(seconds);
-  const ms = Math.floor((seconds % 1) * 1000);
-  const timeStr = date.toISOString().substr(11, 8);
-  return `${timeStr},${ms.toString().padStart(3, "0")}`;
-}
-
-export function convertToSrt(data: TranscriptionResponse): string {
-  const words = data.words;
-  if (!words || words.length === 0) return "";
-
-  const segments: { text: string; start: number; end: number }[] = [];
-  let currentSegment: { text: string; start: number; end: number } | null = null;
-
-  const MAX_CHARS = 42;
-  const MAX_GAP = 0.5; // seconds
-  const MAX_DURATION = 5.0; // seconds
-
-  words.forEach((word) => {
-    if (!currentSegment) {
-      currentSegment = {
-        text: word.text.trim(),
-        start: word.start,
-        end: word.end,
-      };
-    } else {
-      const duration = word.end - currentSegment.start;
-      const gap = word.start - currentSegment.end;
-      const combinedText = currentSegment.text + " " + word.text.trim();
-
-      if (combinedText.length > MAX_CHARS || gap > MAX_GAP || duration > MAX_DURATION) {
-        segments.push(currentSegment);
-        currentSegment = {
-          text: word.text.trim(),
-          start: word.start,
-          end: word.end,
-        };
-      } else {
-        currentSegment.text = combinedText;
-        currentSegment.end = word.end;
-      }
-    }
-  });
-
-  if (currentSegment) {
-    segments.push(currentSegment);
+  function formatSRTTime(seconds: number): string {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    const ms = Math.floor((seconds % 1) * 1000);
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')},${ms.toString().padStart(3, '0')}`;
   }
 
-  return segments
-    .map((seg, i) => {
-      const index = i + 1;
-      const start = formatTime(seg.start);
-      const end = formatTime(seg.end);
-      return `${index}\n${start} --> ${end}\n${seg.text}\n`;
-    })
-    .join("\n");
+  const segments = transcription.segments || [];
+  
+  if (segments.length > 0) {
+    segments.forEach((seg: any) => {
+      const start = formatSRTTime(seg.start);
+      const end = formatSRTTime(seg.end);
+      srt += `${counter}\n${start} --> ${end}\n${seg.text.trim()}\n\n`;
+      counter++;
+    });
+  } else if (transcription.words) {
+    const words = transcription.words;
+    for (let i = 0; i < words.length; i += 10) {
+      const chunk = words.slice(i, i + 10);
+      const start = formatSRTTime(chunk[0].start);
+      const end = formatSRTTime(chunk[chunk.length - 1].end);
+      const text = chunk.map((w: any) => w.text).join(' ');
+      srt += `${counter}\n${start} --> ${end}\n${text.trim()}\n\n`;
+      counter++;
+    }
+  }
+
+  return srt;
 }
