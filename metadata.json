@@ -1,0 +1,6 @@
+{
+  "name": "ElevenScribe Pro",
+  "description": "Professional-grade AI transcription and subtitle generator using ElevenLabs Scribe v2. Accurate, fast, and optimized for high-quality SRT output.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
