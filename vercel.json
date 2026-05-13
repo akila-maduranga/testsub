@@ -1,0 +1,18 @@
+{
+  "functions": {
+    "dist/server.cjs": {
+      "maxDuration": 300,
+      "memory": 1024
+    }
+  },
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "dist/server.cjs"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/$1"
+    }
+  ]
+}

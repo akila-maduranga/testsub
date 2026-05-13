@@ -203,7 +203,7 @@ export default function App() {
                   <p className="text-sm font-medium">Upload Media Source</p>
                   <p className="text-[11px] text-zinc-500 mt-1">Supports MP4, MKV, MP3, WAV</p>
                   <div className="mt-4 px-3 py-1 bg-zinc-800 text-[10px] font-mono text-zinc-400 rounded">
-                    PRO ENGINE: NO INTERNAL LIMIT • <span className="text-amber-500">VERCEL LIMIT: 4.5MB</span>
+                    PRO ENGINE: SCRIBE V2 • HIGH RESOLUTION
                   </div>
                 </motion.div>
               )}
