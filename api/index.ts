@@ -61,6 +61,83 @@ function convertToSRT(transcription: any): string {
 }
 
 // API Routes
+const chunkStorage: Record<string, { chunks: string[], total: number, name: string, type: string }> = {};
+
+app.post("/api/upload-chunk", upload.single("file"), (req: Request, res: Response) => {
+  const file = (req as any).file;
+  const { uploadId, index, total, fileName, fileType } = req.body;
+
+  if (!file || !uploadId) return res.status(400).json({ error: "Invalid chunk data" });
+
+  if (!chunkStorage[uploadId]) {
+    chunkStorage[uploadId] = { chunks: [], total: parseInt(total), name: fileName, type: fileType };
+  }
+
+  // Move chunk to a persistent index in the array
+  chunkStorage[uploadId].chunks[parseInt(index)] = file.path;
+  
+  res.json({ success: true, received: parseInt(index) });
+});
+
+app.post("/api/finalize-chunked", async (req: Request, res: Response) => {
+  const { uploadId } = req.body;
+  const storage = chunkStorage[uploadId];
+
+  if (!storage || storage.chunks.length < storage.total) {
+    return res.status(400).json({ error: "Missing chunks" });
+  }
+
+  const finalPath = path.join("/tmp", `final_${uploadId}_${storage.name}`);
+  const writeStream = fs.createWriteStream(finalPath);
+
+  try {
+    for (const chunkPath of storage.chunks) {
+      if (chunkPath) {
+        const data = fs.readFileSync(chunkPath);
+        writeStream.write(data);
+        fs.unlinkSync(chunkPath); // Clean up chunk
+      }
+    }
+    writeStream.end();
+
+    // Wait for write to finish
+    await new Promise((resolve) => writeStream.on('finish', resolve));
+
+    const apiKey = process.env.ELEVEN_LABS_API_KEY;
+    const formData = new FormData();
+    formData.append("file", fs.createReadStream(finalPath), {
+      filename: storage.name,
+      contentType: storage.type,
+    });
+    formData.append("model_id", "scribe_v1");
+
+    const response = await axios.post(
+      "https://api.elevenlabs.io/v1/speech-to-text",
+      formData,
+      {
+        headers: { ...formData.getHeaders(), "xi-api-key": apiKey },
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
+        timeout: 900000,
+      }
+    );
+
+    fs.unlinkSync(finalPath);
+    delete chunkStorage[uploadId];
+
+    const srt = convertToSRT(response.data);
+    res.json({
+      transcription: response.data,
+      srt: srt,
+      filename: storage.name.replace(/\.[^/.]+$/, "") + ".srt"
+    });
+  } catch (error: any) {
+    if (fs.existsSync(finalPath)) fs.unlinkSync(finalPath);
+    delete chunkStorage[uploadId];
+    res.status(500).json({ error: "Finalization failed", details: error.message });
+  }
+});
+
 app.post("/api/transcribe", upload.single("file"), async (req: Request, res: Response) => {
   const file = (req as any).file;
   try {
@@ -117,6 +194,13 @@ app.post("/api/transcribe", upload.single("file"), async (req: Request, res: Res
 
 // Export for Vercel
 export default app;
+
+// Config Route
+app.get("/api/config", (req, res) => {
+  res.json({
+    hasApiKey: !!process.env.ELEVEN_LABS_API_KEY
+  });
+});
 
 // Local runner for dev/Cloud Run
 if (process.env.NODE_ENV !== "production") {
