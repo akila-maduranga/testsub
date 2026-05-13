@@ -1,18 +1,19 @@
 {
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "dest": "/api/index.ts"
+    },
+    {
+      "source": "/(.*)",
+      "dest": "/$1"
+    }
+  ],
   "functions": {
-    "dist/server.cjs": {
+    "api/index.ts": {
       "maxDuration": 300,
       "memory": 1024
     }
-  },
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "dist/server.cjs"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/$1"
-    }
-  ]
+  }
 }
